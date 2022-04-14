@@ -1,13 +1,13 @@
 
 from flask import Flask, render_template, url_for, request
-from csv import reader
+import csv
+import os
 import io
 
 app = Flask(__name__)
-def getData(fname):
-
-    temp1 = []
-    temp2 = set()
+def getFromCsvFile(fname):
+    loopSets = []
+    loopSet = set()
 
     s = io.StringIO(fname.stream.read().decode("UTF8"), newline=None)
     cRead = reader(s)
@@ -15,116 +15,141 @@ def getData(fname):
             cell = list(filter(None,cell))
             data = set(cell)
             for item in data:
-                temp2.add(frozenset([item]))
-            temp1.append(data)
-    return(temp2, temp1)
-        
-    
-def createCell1(dataSet):
-    Cell1 = []
-    for t in dataSet:
-        for item in t:
-            if not [item] in Cell1:
-                Cell1.append([item])
+                loopSet.add(frozenset([item]))
+            loopSets.append(data)
+    return(loopSet, loopSets)
 
-    Cell1.sort()
-    return list(map(frozenset, Cell1))
 
-def generate(Ak, A):  # creates Ck
-    tList = []
-    lk = len(Ak)
-    for i in range(lk):
-        for j in range(i + 1, lk):
-            L1 = list(Ak[i])[:A - 2]
-            L2 = list(Ak[j])[:A - 2]
-            L1.sort()
-            L2.sort()
-            if L1 == L2:  # if first k-2 elements are equal
-                    tList.append(Ak[i] | Ak[j])  # set union
-    return tList
+minsup = 20
+f2 = "Rules.txt"
+f1 = "FItems.txt"
+minconf = 0.39
 
-def sD1(D, Ck, supp):
-    ssdCnt = {}
-    for tid in D:
-        for can in Ck:
-            if can.issubset(tid):
-                if not can in ssdCnt:
-                    ssdCnt[can] = 1
+
+def L1(data):
+    '''
+    Find frequent 1-itemsets
+    '''
+    #Get all 1-itemsets in the list items and their counts in the dictionary counts
+    s = io.StringIO(data.stream.read().decode("UTF8"), newline=None)
+    DataCaptured = csv.reader(s, delimiter=',')
+    data = list(DataCaptured)
+    for e in data:
+        e = sorted(e)
+    count = {}
+    for items in data:
+        for item in items:
+            if item not in count:
+                count[(item)] = 1
+            else:
+                count[(item)] = count[(item)] + 1
+    #print("C1 Items", count)
+    # print("C1 Length : ", len(count))
+    # print(count)
+
+    #Thresholding
+    count2 = {k: v for k, v in count.items() if v >= minsup}
+    #print("L1 Items : ", count2)
+    # print("L1 Length : ", len(count2))
+    # print()
+
+    return count2, data
+
+
+def generateCk(Lk_1, flag, data):
+    '''
+    Generate Ck by joining 2 Lk-1
+    '''
+    Ck = []
+
+    if flag == 1:
+        flag = 0
+        for item1 in Lk_1:
+            for item2 in Lk_1:
+                if item2 > item1:
+                    Ck.append((item1, item2))
+        # print("C2: ", Ck)
+        # print("length : ", len(Ck))
+        # print()
+
+    else:
+        for item in Lk_1:
+            k = len(item)
+        for item1 in Lk_1:
+            for item2 in Lk_1:
+                if (item1[:-1] == item2[:-1]) and (item1[-1] != item2[-1]):
+                    if item1[-1] > item2[-1]:
+                        Ck.append(item2 + (item1[-1],))
+                    else:
+                        Ck.append(item1 + (item2[-1],))
+        # print("C" + str(k+1) + ": ", Ck[1:3])
+        # print("Length : ", len(Ck))
+        # print()
+    L = generateLk(set(Ck), data)
+    return L, flag
+
+
+def generateLk(Ck, data):
+    '''
+    If item in Ck belongs to a transaction,
+    it makes it into list Ct
+    Then Ct is thresholded to form L
+    '''
+    count = {}
+    for itemset in Ck:
+        #print(itemset)
+        for transaction in data:
+            if all(e in transaction for e in itemset):
+                if itemset not in count:
+                    count[itemset] = 1
                 else:
-                    ssdCnt[can] += 1
-    numItems = float(len(D))
-    retList = []
-    sR = {}
-    for key in ssdCnt:
-        support = ssdCnt[key] / numItems * 1000
+                    count[itemset] = count[itemset] + 1
 
-        # support = ssdCnt[key]
-        # print(support)
+    # print("Ct Length : ", len(count))
+    # print()
 
-        if support >= supp:
-            retList.insert(0, key)
-        sR[key] = support
-    return (retList, sR)
+    count2 = {k: v for k, v in count.items() if v >= minsup}
+    # print("L Length : ", len(count2))
+    # print()
+    return count2
 
-def readFile(fname, minSup):
-    (temp1, tempList) = getData(fname)
 
-    # print(recordSetList)
+def apriori(data):
+    L, data = L1(data)
+    flag = 1
+    allItems = dict(L)
+    while(len(L) != 0):
+        fo = open(f1, "a+")
+        for k, v in L.items():
+            fo.write(str(k) + ' >>> ' + str(v) + '\n\n')
+        fo.close()
 
-    (L1, sD) = sD1(tempList, temp1, minSup)
-    L = [L1]
-    k = 2
-    while len(L[k - 2]) > 0:
-        Ck = generate(L[k - 2], k)
-        (Lk, supK) = sD1(tempList, Ck, minSup)  # scan DB to get Lk
-        sD.update(supK)
-        L.append(Lk)
-        k += 1
-    return (L, sD)
-
-def sorted(list1):
-    for temp in list1:
-        for i1 in list1[0]:
-            for i2 in list1[1]:
-                for i3 in list1[2]:
-                    for i4 in list1[3]:
-                        if i1.issubset(i2) \
-                                or i1.issubset(i3) \
-                                or i1.issubset(i4):
-                            try:
-                                list1[0].remove(i1)
-                            except:
-                                {}
-                        if i2.issubset(i3) \
-                                or i2.issubset(i4):
-                            try:
-                                list1[1].remove(i2)
-                            except:
-                                {}
-                        if i3.issubset(i4):
-                            try:
-                                list1[2].remove(i3)
-                            except:
-                                {}
-    return list1
+        L, flag = generateCk(L, flag, data)
+        allItems.update(L)
+        norm = {}
+        for k, vals in allItems.items():
+            # print(vals)
+            values = []
+            norm[k] = values
+        updateItems = []
+        for string in norm:
+            updateItems.append(string)
+    print(updateItems)
+    return updateItems  
 
 
 
 @app.route('/')
-@app.route('/first')
+@app.route('/home')
 def home():
-    return render_template("first.html")
+    return render_template("index.html")
 
-@app.route('/output',methods=['POST', 'GET'])
+@app.route('/result',methods=['POST', 'GET'])
 def result():
     output = request.files['myfile']
-    f1, rules = readFile(output,20)
-    f1 = sorted(f1)
-    return render_template('first.html', temp = f1)
+    op = apriori(output)
+    # f1, rules = aprioriFromCsvFile(output,20)
+    return render_template('index.html', temp = op)
     
-
-
-
-
 if __name__ == "__main__":
-    app.run(host='127.0.0.1', port=8080, debug=True)
+    app.run(debug=True)
